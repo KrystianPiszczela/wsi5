@@ -8,6 +8,7 @@ from tqdm.notebook import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 class BCDataset(torch.utils.data.Dataset):
     def __init__(self, data, labels):
         self.data = data
@@ -23,22 +24,27 @@ class BCDataset(torch.utils.data.Dataset):
         sample = {'data': torch.tensor(self.data[idx]), 'label': torch.tensor(self.labels[idx], dtype=torch.long)}
         return sample
 
+
 class MLP(nn.Module):
-    def __init__(self, hidden_size, num_of_layers):
+    activation_funs = {'ReLU': nn.ReLU, 'LeakyReLU': nn.LeakyReLU, 'identity': nn.Identity, 'sigmoid': nn.Sigmoid}
+
+    def __init__(self, hidden_size, num_of_layers, activation_fun='ReLU'):
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(8, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 4)
         self.num_of_layers = num_of_layers
-        
+        self.fc = nn.ModuleList([nn.Linear(8, hidden_size)])
+        for _ in range(self.num_of_layers - 2):
+            self.fc.append(nn.Linear(hidden_size, hidden_size))
+        self.fc.append(nn.Linear(hidden_size, 4))
+        self.hidden_activation = MLP.activation_funs[activation_fun]()
 
     def forward(self, x):
-        x = self.fc1(x.float())
-        x = self.fc2(x.float())
-        x = self.fc3(x.float())
-
+        for i in range(self.num_of_layers - 1):
+            x = self.fc[i](x.float())
+            x = self.hidden_activation(x)
+        x = self.fc[-1](x.float())
         return x
-    
+
+
 def game_state_to_data_sample(game_state: dict, bounds, block_size):
     attributes = {
         'PD': False,
@@ -66,18 +72,18 @@ def game_state_to_data_sample(game_state: dict, bounds, block_size):
             at.append(1)
         else:
             at.append(0)
-
     return at
-    
+
+
 def prepare_data(file_path):
     with open(file_path, 'rb') as f:
         data_file = pickle.load(f)
-    
+
     inputs = []
     outputs = []
 
     prev_len_body = 0
-    
+
     for game_state in data_file['data']:
 
         len_body = len(game_state[0]['snake_body'])
@@ -95,6 +101,7 @@ def prepare_data(file_path):
         outputs.append(out)
 
     return inputs, outputs
+
 
 if __name__ == "__main__":
     X, Y = prepare_data("data/snake.pickle")
@@ -128,6 +135,7 @@ if __name__ == "__main__":
     for epoch in epochs:
         train_loss = []
         model.train()
+
         for batch in (train_dl):
             print(batch)
             optim.zero_grad()
@@ -135,9 +143,12 @@ if __name__ == "__main__":
             y = batch['label'].to(device)
 
             output = model(x)
+
             print(output)
-            print(torch.argmax(output, dim=1))
-            loss = criterion(torch.argmax(output, dim=1),y)
+            predicted_classes = torch.argmax(output, dim=1)
+            print(predicted_classes)
+
+            loss = criterion(output, predicted_classes)
 
             loss.backward()
             optim.step()
