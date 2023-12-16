@@ -5,15 +5,17 @@ import pygame
 import time
 from math import sqrt, floor
 import numpy as np
+import torch
 
 
 from food import Food
-from model import game_state_to_data_sample, prepare_id3_tree
+from model import prepare_id3_tree
+from model_mlp import game_state_to_data_sample, prepare_MLP_model
 from snake import Snake, Direction
 
 
-x = floor(sqrt(3.14*313329)*1000)%1000
-print('Numer algorytmu', x%3)
+x = floor(sqrt(3.14*313329)*1000) % 1000
+print('Numer algorytmu', x % 3)
 
 
 def main():
@@ -27,7 +29,7 @@ def main():
     food = Food(block_size, bounds, lifetime=100)
 
     # agent = HumanAgent(block_size, bounds)  # Once your agent is good to go, change this line
-    agent = BehavioralCloningAgent(block_size, bounds)
+    agent = MLPAgent(block_size, bounds)
     scores = []
     run = True
     pygame.time.delay(1000)
@@ -100,14 +102,12 @@ class HumanAgent:
 
 
 class BehavioralCloningAgent:
-    
     def __init__(self, block_size, bounds):
         self.block_size = block_size
         self.bounds = bounds
         self.data = []
 
         self.model = prepare_id3_tree()
-
 
     def act(self, game_state) -> Direction:
         """ Calculate data sample attributes from game_state and run the trained model to predict snake's action/direction"""
@@ -117,9 +117,41 @@ class BehavioralCloningAgent:
         action = self.model.decision(data_sample)
 
         self.data.append((copy.deepcopy(game_state), action))
-        
+
         return action
 
+    def dump_data(self):
+        pass
+
+
+class MLPAgent:
+    def __init__(self, block_size, bounds):
+        self.block_size = block_size
+        self.bounds = bounds
+        self.data = []
+
+        self.model = prepare_MLP_model()
+
+    def act(self, game_state) -> Direction:
+        """ Calculate data sample attributes from game_state and run the trained model to predict snake's action/direction"""
+        data_sample = game_state_to_data_sample(game_state, self.bounds, self.block_size)
+        self.atrributes = torch.tensor(data_sample)
+        with torch.no_grad():
+            self.model.eval()  # Ustawienie modelu w tryb ewaluacji
+            output = self.model(self.atrributes)
+        new_direction = torch.argmax(output).item()
+        print(new_direction)
+        if new_direction == 0:
+            action = Direction.UP
+        elif new_direction == 1:
+            action = Direction.RIGHT
+        elif new_direction == 2:
+            action = Direction.DOWN
+        elif new_direction == 3:
+            action = Direction.LEFT
+
+        self.data.append((copy.deepcopy(game_state), action))
+        return action
 
     def dump_data(self):
         pass
@@ -127,4 +159,3 @@ class BehavioralCloningAgent:
 
 if __name__ == "__main__":
     main()
-

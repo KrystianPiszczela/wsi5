@@ -103,7 +103,7 @@ def prepare_data(file_path):
     return inputs, outputs
 
 
-if __name__ == "__main__":
+def prepare_MLP_model():
     X, Y = prepare_data("data/snake.pickle")
 
     l = len(Y)
@@ -158,3 +158,8 @@ if __name__ == "__main__":
         epochs.set_postfix({'loss': loss_now})
 
     print(train_loss)
+    return model
+
+
+if __name__ == "__main__":
+    prepare_MLP_model()
