@@ -125,11 +125,11 @@ def prepare_MLP_model():
     train_dl = torch.utils.data.DataLoader(dataset=train_ds, batch_size=64, shuffle=True)
     test_dl = torch.utils.data.DataLoader(dataset=test_ds, batch_size=64, shuffle=False)
 
-    model = MLP(64, 5).to(device)
+    model = MLP(64, 2).to(device)
     criterion = nn.CrossEntropyLoss()
-    optim = torch.optim.SGD(model.parameters(), lr=0.001)
+    optim = torch.optim.SGD(model.parameters(), lr=0.1)
 
-    num_epochs = 3
+    num_epochs = 100
     epochs = tqdm(range(num_epochs))
 
     for epoch in epochs:
@@ -137,27 +137,49 @@ def prepare_MLP_model():
         model.train()
 
         for batch in (train_dl):
-            print(batch)
+            # print(batch)
             optim.zero_grad()
             x = batch['data'].reshape(-1, 8).to(device)
             y = batch['label'].to(device)
 
             output = model(x)
 
+            # print(output)
+            # print(y)
+            print(1)
             print(output)
             predicted_classes = torch.argmax(output, dim=1)
+            print(2)
             print(predicted_classes)
+            y_classes = torch.argmax(y, dim=1)
+            print(2)
+            print(y_classes)
 
-            loss = criterion(output, predicted_classes)
-
+            loss = criterion(output, y_classes)
+            # loss = criterion(predicted_classes, y_classes)
+            print(3)
+            print(loss)
+            # loss.requires_grad = True
             loss.backward()
             optim.step()
             train_loss.append(loss.item())
 
         loss_now = np.mean(train_loss)
         epochs.set_postfix({'loss': loss_now})
+        # print(1)
 
-    print(train_loss)
+    # print(train_loss)
+    count = 0
+
+    for i in range(len(train_inputs)):
+
+        out = model(torch.tensor(train_inputs[i]))
+        out = torch.argmax(out).item()
+        train = torch.argmax(torch.tensor(train_outputs[i])).item()
+        if out == train:
+            count += 1
+
+    print('accuracy: ', count/len(train_outputs))
     return model
 
 

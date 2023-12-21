@@ -34,7 +34,7 @@ def main():
     run = True
     pygame.time.delay(1000)
     while run:
-        pygame.time.delay(5)  # Adjust game speed, decrease to test your agent and model quickly
+        pygame.time.delay(160)  # Adjust game speed, decrease to test your agent and model quickly
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -136,9 +136,9 @@ class MLPAgent:
         """ Calculate data sample attributes from game_state and run the trained model to predict snake's action/direction"""
         data_sample = game_state_to_data_sample(game_state, self.bounds, self.block_size)
         self.atrributes = torch.tensor(data_sample)
-        with torch.no_grad():
-            self.model.eval()  # Ustawienie modelu w tryb ewaluacji
-            output = self.model(self.atrributes)
+        # with torch.no_grad():
+        self.model.eval()  # Ustawienie modelu w tryb ewaluacji
+        output = self.model(self.atrributes)
         new_direction = torch.argmax(output).item()
         print(new_direction)
         if new_direction == 0:
