@@ -1,12 +1,17 @@
 import torch
 import torch.nn as nn
-from snake import Direction
+import torchmetrics
+from torch.utils.tensorboard import SummaryWriter
+import logging
 import numpy as np
 from model import check_if_body, check_if_bound, check_where_food
 import pickle
 from tqdm.notebook import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+writer = SummaryWriter()
 
 
 class BCDataset(torch.utils.data.Dataset):
@@ -31,10 +36,16 @@ class MLP(nn.Module):
     def __init__(self, hidden_size, num_of_layers, activation_fun='ReLU'):
         super(MLP, self).__init__()
         self.num_of_layers = num_of_layers
-        self.fc = nn.ModuleList([nn.Linear(8, hidden_size)])
-        for _ in range(self.num_of_layers - 2):
-            self.fc.append(nn.Linear(hidden_size, hidden_size))
-        self.fc.append(nn.Linear(hidden_size, 4))
+        if num_of_layers == 1:
+            self.fc = nn.ModuleList([nn.Linear(8, 4)])
+        elif num_of_layers == 2:
+            self.fc = nn.ModuleList([nn.Linear(8, hidden_size)])
+            self.fc.append(nn.Linear(hidden_size, 4))
+        else:
+            self.fc = nn.ModuleList([nn.Linear(8, hidden_size)])
+            for _ in range(self.num_of_layers - 2):
+                self.fc.append(nn.Linear(hidden_size, hidden_size))
+            self.fc.append(nn.Linear(hidden_size, 4))
         self.hidden_activation = MLP.activation_funs[activation_fun]()
 
     def forward(self, x):
@@ -103,35 +114,79 @@ def prepare_data(file_path):
     return inputs, outputs
 
 
-def prepare_MLP_model():
+def calculate_valid_accuracy(model, val_dl, criterion):
+    model.eval()
+    val_accuracy_metric = torchmetrics.Accuracy(task="multiclass", num_classes=4)
+    val_loss = []
+
+    with torch.no_grad():
+        for val_batch in val_dl:
+            val_x = val_batch['data'].reshape(-1, 8).to(device)
+            val_y = val_batch['label'].to(device)
+            val_output = model(val_x)
+            val_loss_batch = criterion(val_output, torch.argmax(val_y, dim=1))
+            val_loss.append(val_loss_batch.item())
+            val_accuracy_metric(torch.argmax(val_output, dim=1), torch.argmax(val_y, dim=1))
+    return val_loss, val_accuracy_metric
+
+
+def log_valid_accuracy(val_loss, val_accuracy_metric, epoch):
+    val_loss_now = np.mean(val_loss)
+    logger.info(f'Validation Loss: {val_loss_now}')
+    writer.add_scalar('Loss/Validation', val_loss_now, epoch)
+    val_accuracy = val_accuracy_metric.compute()
+    logger.info(f'Validation Accuracy: {val_accuracy}')
+    writer.add_scalar('Accuracy/Validation', val_accuracy, epoch)
+
+
+def log_train_accuracy(train_loss, train_accuracy_metric, epoch, epochs):
+    loss_now = np.mean(train_loss)
+    logger.info(f'Epoch {epoch + 1}/{epochs}, Loss: {loss_now}')
+    writer.add_scalar('Loss/Train', loss_now, epoch)
+    train_accuracy = train_accuracy_metric.compute()
+    logger.info(f'Training Accuracy: {train_accuracy}')
+    writer.add_scalar('Accuracy/Train', train_accuracy, epoch)
+
+
+def prepare_MLP_model(hidden_size, num_of_layers, activ_fun):
     X, Y = prepare_data("data/snake.pickle")
 
     l = len(Y)
 
-    ratio = 0.8
+    train_ratio = 0.8
+    val_ratio = 0.1
+    test_ratio = 0.1
 
-    train_inputs = X[:int(l*ratio)]
-    train_outputs = Y[:int(l*ratio)]
+    train_size = int(l * train_ratio)
+    val_size = int(l * val_ratio)
+    test_size = int(l * test_ratio)
 
-    test_inputs = X[int(l*ratio):]
-    test_outputs = Y[int(l*ratio):]
+    train_inputs, val_test_inputs = X[:train_size], X[train_size:]
+    train_outputs, val_test_outputs = Y[:train_size], Y[train_size:]
+
+    val_inputs, test_inputs = val_test_inputs[:val_size], val_test_inputs[val_size:]
+    val_outputs, test_outputs = val_test_outputs[:val_size], val_test_outputs[val_size:]
 
     # np.set_printoptions(threshold=np.inf)
     # print(train_inputs)
 
     train_ds = BCDataset(train_inputs, train_outputs)
+    val_ds = BCDataset(val_inputs, val_outputs)
     test_ds = BCDataset(test_inputs, test_outputs)
 
     train_dl = torch.utils.data.DataLoader(dataset=train_ds, batch_size=64, shuffle=True)
+    val_dl = torch.utils.data.DataLoader(dataset=val_ds, batch_size=64, shuffle=False)
     test_dl = torch.utils.data.DataLoader(dataset=test_ds, batch_size=64, shuffle=False)
 
-    model = MLP(64, 2).to(device)
+    model = MLP(hidden_size, num_of_layers, activ_fun).to(device)
     criterion = nn.CrossEntropyLoss()
     optim = torch.optim.SGD(model.parameters(), lr=0.1)
 
     num_epochs = 100
     epochs = tqdm(range(num_epochs))
+    train_accuracy_metric = torchmetrics.Accuracy(task="multiclass", num_classes=4)
 
+    first_epoch = True
     for epoch in epochs:
         train_loss = []
         model.train()
@@ -146,42 +201,44 @@ def prepare_MLP_model():
 
             # print(output)
             # print(y)
-            print(1)
-            print(output)
+            # print(1)
+            # print(output)
             predicted_classes = torch.argmax(output, dim=1)
-            print(2)
-            print(predicted_classes)
+            # print(2)
+            # print(predicted_classes)
             y_classes = torch.argmax(y, dim=1)
-            print(2)
-            print(y_classes)
+            # print(2)
+            # print(y_classes)
 
             loss = criterion(output, y_classes)
             # loss = criterion(predicted_classes, y_classes)
-            print(3)
-            print(loss)
+            # print(3)
+            # print(loss)
             # loss.requires_grad = True
             loss.backward()
             optim.step()
             train_loss.append(loss.item())
 
-        loss_now = np.mean(train_loss)
-        epochs.set_postfix({'loss': loss_now})
-        # print(1)
+            if first_epoch:
+                for i, (name, param) in enumerate(model.named_parameters()):
+                    if 'weight' in name:
+                        grad_matrix_norm = torch.norm(param.grad, p='fro') / np.sqrt(param.grad.numel())
+                        print(f'Layer: {name}, Gradient Matrix Norm: {grad_matrix_norm.item()}')
 
-    # print(train_loss)
-    count = 0
+                first_epoch = False
+            train_accuracy_metric(predicted_classes, y_classes)
 
-    for i in range(len(train_inputs)):
+        log_train_accuracy(train_loss, train_accuracy_metric, epoch, epochs)
+        val_loss, val_accuracy_metric = calculate_valid_accuracy(model, val_dl, criterion)
+        log_valid_accuracy(val_loss, val_accuracy_metric, epoch)
 
-        out = model(torch.tensor(train_inputs[i]))
-        out = torch.argmax(out).item()
-        train = torch.argmax(torch.tensor(train_outputs[i])).item()
-        if out == train:
-            count += 1
-
-    print('accuracy: ', count/len(train_outputs))
+    writer.close()
     return model
 
 
 if __name__ == "__main__":
-    prepare_MLP_model()
+    # 1, 2, 5, 30
+    num_of_layers = 1
+    activ_fun = "ReLU"
+    # 'identity''ReLU''LeakyReLU''sigmoid'
+    prepare_MLP_model(1024, num_of_layers, activ_fun)

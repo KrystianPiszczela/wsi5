@@ -14,8 +14,8 @@ from model_mlp import game_state_to_data_sample, prepare_MLP_model
 from snake import Snake, Direction
 
 
-x = floor(sqrt(3.14*313329)*1000) % 1000
-print('Numer algorytmu', x % 3)
+# x = floor(sqrt(3.14*313329)*1000) % 1000
+# print('Numer algorytmu', x % 3)
 
 
 def main():
@@ -29,12 +29,12 @@ def main():
     food = Food(block_size, bounds, lifetime=100)
 
     # agent = HumanAgent(block_size, bounds)  # Once your agent is good to go, change this line
-    agent = MLPAgent(block_size, bounds)
+    agent = MLPAgent(block_size, bounds, "ReLU")
     scores = []
     run = True
     pygame.time.delay(1000)
     while run:
-        pygame.time.delay(160)  # Adjust game speed, decrease to test your agent and model quickly
+        pygame.time.delay(1)  # Adjust game speed, decrease to test your agent and model quickly
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -55,6 +55,8 @@ def main():
             pygame.display.update()
             pygame.time.delay(300)
             scores.append(snake.length - 3)
+            if len(scores) == 100:
+                break
             snake.respawn()
             food.respawn()
 
@@ -125,12 +127,12 @@ class BehavioralCloningAgent:
 
 
 class MLPAgent:
-    def __init__(self, block_size, bounds):
+    def __init__(self, block_size, bounds, activ_fun):
         self.block_size = block_size
         self.bounds = bounds
         self.data = []
 
-        self.model = prepare_MLP_model()
+        self.model = prepare_MLP_model(activ_fun)
 
     def act(self, game_state) -> Direction:
         """ Calculate data sample attributes from game_state and run the trained model to predict snake's action/direction"""
